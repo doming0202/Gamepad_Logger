@@ -368,6 +368,10 @@
   function frameMs(fps){ return 1000 / fps; }
   function pollMs(hz){ return 1000 / hz; }
 
+  function msToFrame(tMs, fps){
+    return Math.floor(tMs / (1000 / fps));
+  }
+
   function msToSample(tMs, hz){
     return Math.floor(tMs / pollMs(hz));
   }
@@ -520,7 +524,7 @@
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><span class="pill">${b}</span></td>
+        <td><span class="pill">${resolveButtonName(b)}</span></td>
         <td class="mono">${pressText}</td>
         <td class="mono">${intervalText}</td>
       `;
@@ -619,12 +623,13 @@
     for (const e of state.rawLogs) buttons.add(e.button);
     const arr = Array.from(buttons).sort((a,b)=>a-b);
 
-    const header = "button,lastPressMs,lastPressFrames,lastPressSamples,lastIntervalMs,lastIntervalFrames,lastIntervalSamples,fps,pollingHz\n";
+    const header = "buttonIndex,buttonName,lastPressMs,lastPressFrames,lastPressSamples,lastIntervalMs,lastIntervalFrames,lastIntervalSamples,fps,pollingHz\n";
     const lines = arr.map(b=>{
       const p = state.lastPress.get(b);
       const itv = state.lastInterval.get(b);
       return [
         b,
+        resolveButtonName(b),
         p ? p.ms.toFixed(4) : "",
         p ? p.frames : "",
         p ? p.samples : "",
