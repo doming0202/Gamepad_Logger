@@ -150,7 +150,7 @@
 
       <div class="row">
         <label>
-          Polling Rate (Hz) <span class="small">※仮定</span>
+          Polling Rate (Hz) <span class="small"></span>
           <select id="pollingRate">
             <option value="125">125</option>
             <option value="250">250</option>
@@ -159,7 +159,7 @@
           </select>
         </label>
 
-        <label>
+         <label>
           Target FPS
           <select id="fps">
             <option value="60" selected>60</option>
@@ -167,6 +167,15 @@
             <option value="144">144</option>
             <option value="180">180</option>
             <option value="240">240</option>
+          </select>
+        </label>
+
+        <label>
+          Button Labels
+          <select id="buttonProfile">
+            <option value="xbox">Xbox</option>
+            <option value="playstation">PlayStation</option>
+            <option value="nintendo">Nintendo</option>
           </select>
         </label>
 
@@ -251,8 +260,45 @@
     </div>
   </div>
 
+
 <script>
 (() => {
+  // ================================
+  // Button Label Profiles
+  // ================================
+  const BUTTON_PROFILES = {
+    xbox: {
+      name: "Xbox",
+      map: {
+        0:"A", 1:"B", 2:"X", 3:"Y",
+        4:"LB", 5:"RB", 6:"LT", 7:"RT",
+        8:"View", 9:"Menu",
+        10:"LStick", 11:"RStick",
+        12:"D-Up", 13:"D-Down", 14:"D-Left", 15:"D-Right"
+      }
+    },
+    playstation: {
+      name: "PlayStation",
+      map: {
+        0:"×", 1:"○", 2:"□", 3:"△",
+        4:"L1", 5:"R1", 6:"L2", 7:"R2",
+        8:"Share", 9:"Options",
+        10:"L3", 11:"R3",
+        12:"D-Up", 13:"D-Down", 14:"D-Left", 15:"D-Right"
+      }
+    },
+    nintendo: {
+      name: "Nintendo",
+      map: {
+        0:"B", 1:"A", 2:"Y", 3:"X",
+        4:"L", 5:"R", 6:"ZL", 7:"ZR",
+        8:"-", 9:"+",
+        10:"LStick", 11:"RStick",
+        12:"D-Up", 13:"D-Down", 14:"D-Left", 15:"D-Right"
+      }
+    }
+  };
+
   // ================================
   // Config
   // ================================
@@ -278,6 +324,7 @@
     pollingRateHz: 1000,
     fps: 60,
     monitorIntervalMs: 2,
+    buttonProfile: "xbox",
   };
 
   // ================================
@@ -321,12 +368,14 @@
   function frameMs(fps){ return 1000 / fps; }
   function pollMs(hz){ return 1000 / hz; }
 
-  function msToFrame(tMs, fps){
-    return Math.floor(tMs / frameMs(fps));
-  }
-
   function msToSample(tMs, hz){
     return Math.floor(tMs / pollMs(hz));
+  }
+
+  function resolveButtonName(index){
+    const prof = BUTTON_PROFILES[config.buttonProfile];
+    if (!prof) return `#${index}`;
+    return prof.map[index] ?? `#${index}`;
   }
 
   function fmtNum(n){ return (Number.isFinite(n) ? n.toString() : "-"); }
@@ -440,7 +489,7 @@
       const absIndex = start + idx;
       const f = msToFrame(e.timeMs, config.fps);
       const s = msToSample(e.timeMs, config.pollingRateHz);
-      return `${absIndex.toString().padStart(5,"0")} | t=${e.timeMs.toFixed(2)}ms | F=${String(f).padStart(5," ")} | smp=${String(s).padStart(6," ")} | btn=${String(e.button).padStart(2," ")} ${e.state}`;
+      return `${absIndex.toString().padStart(5,"0")} | t=${e.timeMs.toFixed(2)}ms | F=${String(f).padStart(5," ")} | smp=${String(s).padStart(6," ")} | btn=${resolveButtonName(e.button)} ${e.state}`;
     });
 
     elTimeline.value = lines.join("\n");
@@ -620,6 +669,13 @@
   btnReset.addEventListener("click", resetAll);
   btnExportRaw.addEventListener("click", exportRawCsv);
   btnExportAnalysis.addEventListener("click", exportAnalysisCsv);
+
+  const selButtonProfile = document.getElementById("buttonProfile");
+  selButtonProfile.addEventListener("change", () => {
+    config.buttonProfile = selButtonProfile.value;
+    renderAnalysisTable();
+    renderTimeline();
+  });
 
   window.addEventListener("gamepadconnected", (e) => {
     state.padIndex = e.gamepad.index;
