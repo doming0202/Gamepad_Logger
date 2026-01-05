@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Gamepad Frame Logger (Single File)</title>
+<style>
+  :root{
+    --bg:#0b0c10;
+    --panel:#12141b;
+    --panel2:#0f1117;
+    --text:#e8eaf0;
+    --muted:#a7adbd;
+    --line:rgba(255,255,255,.12);
+    --accent:#78a6ff;
+    --danger:#ff6b6b;
+    --ok:#7dffb2;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    --sans: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans);
+    padding:18px;
+  }
+  h1{ margin:0 0 10px; font-size:18px; font-weight:700; }
+  .hint{ color:var(--muted); font-size:12px; line-height:1.55; margin:0 0 14px; }
+  .grid{
+    display:grid; gap:12px;
+    grid-template-columns: 360px 1fr;
+  }
+  @media (max-width: 980px){
+    .grid{ grid-template-columns:1fr; }
+  }
+  .card{
+    background:linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:14px;
+  }
+  .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .row + .row{ margin-top:10px; }
+  label{ font-size:12px; color:var(--muted); display:flex; flex-direction:column; gap:6px; }
+  select, button, input[type="number"]{
+    background:var(--panel2); color:var(--text);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 10px;
+    font-size:13px;
+    outline:none;
+  }
+  button{
+    cursor:pointer; font-weight:650;
+    transition: transform .04s ease, border-color .12s ease, opacity .12s ease;
+  }
+  button:hover{ border-color: rgba(120,166,255,.55); }
+  button:active{ transform: translateY(1px); }
+  .btn-accent{ border-color: rgba(120,166,255,.45); }
+  .btn-danger{ border-color: rgba(255,107,107,.45); }
+  .btn-muted{ opacity:.85; }
+  .stat{
+    display:grid; grid-template-columns: 1fr 1fr; gap:10px;
+  }
+  .kpi{
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px;
+  }
+  .kpi .k{ color:var(--muted); font-size:12px; }
+  .kpi .v{ font-family:var(--mono); font-size:13px; margin-top:6px; }
+  .mono{ font-family:var(--mono); }
+  .split{
+    display:grid; gap:12px; grid-template-columns: 1fr 1fr;
+  }
+  @media (max-width: 980px){
+    .split{ grid-template-columns:1fr; }
+  }
+  textarea{
+    width:100%; min-height: 220px;
+    resize: vertical;
+    background:var(--panel2); color:var(--text);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:12px;
+    font-family:var(--mono);
+    font-size:12px;
+    line-height:1.5;
+    outline:none;
+  }
+  .small{ font-size:12px; color:var(--muted); }
+  .tag{
+    display:inline-flex; align-items:center; gap:6px;
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:6px 10px;
+    font-size:12px;
+    color:var(--muted);
+    background:rgba(255,255,255,.03);
+  }
+  .tag b{ color:var(--text); font-weight:700; }
+  .ok{ color:var(--ok); }
+  .ng{ color:var(--danger); }
+  .table{
+    width:100%;
+    border-collapse:separate;
+    border-spacing:0;
+    overflow:hidden;
+    border:1px solid var(--line);
+    border-radius:12px;
+  }
+  .table th, .table td{
+    padding:10px 10px;
+    font-size:12px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  .table th{
+    text-align:left; color:var(--muted);
+    background:rgba(255,255,255,.03);
+  }
+  .table tr:last-child td{ border-bottom:none; }
+  .pill{
+    font-family:var(--mono);
+    padding:2px 8px;
+    border-radius:999px;
+    border:1px solid var(--line);
+    background:rgba(255,255,255,.03);
+    display:inline-block;
+  }
+</style>
+</head>
+<body>
+  <h1>Gamepad Frame Logger（単一HTML）</h1>
+  <p class="hint">
+    ・記録は <span class="mono">performance.now()</span> の ms で保存（Rawログ）。<br/>
+    ・下のドロップダウン（FPS / Polling）を変えると、同じログを再解析して表示します（取り直し不要）。<br/>
+    ・ブラウザは Gamepad API の制約があるため、Polling は「仮定値（解釈パラメータ）」です。<br/>
+  </p>
+
+  <div class="grid">
+    <!-- Left -->
+    <div class="card">
+      <div class="row">
+        <span class="tag">Pad: <b id="padName">未接続</b></span>
+        <span class="tag">Index: <b id="padIndex">-</b></span>
+        <span class="tag">Status: <b id="runStatus" class="ng">STOP</b></span>
+      </div>
+
+      <div class="row">
+        <label>
+          Polling Rate (Hz) <span class="small">※仮定</span>
+          <select id="pollingRate">
+            <option value="125">125</option>
+            <option value="250">250</option>
+            <option value="500">500</option>
+            <option value="1000" selected>1000</option>
+          </select>
+        </label>
+
+        <label>
+          Target FPS
+          <select id="fps">
+            <option value="60" selected>60</option>
+            <option value="120">120</option>
+            <option value="144">144</option>
+            <option value="180">180</option>
+            <option value="240">240</option>
+          </select>
+        </label>
+
+        <label>
+          Monitor Interval (ms)
+          <input id="monitorInterval" type="number" min="1" max="20" value="2" />
+        </label>
+      </div>
+
+      <div class="row">
+        <button id="btnStart" class="btn-accent">START</button>
+        <button id="btnStop" class="btn-muted">STOP</button>
+        <button id="btnReset" class="btn-danger">RESET</button>
+      </div>
+
+      <div class="row">
+        <button id="btnExportRaw" class="btn-muted">Export Raw CSV</button>
+        <button id="btnExportAnalysis" class="btn-muted">Export Analysis CSV</button>
+      </div>
+
+      <div class="row">
+        <span class="small">
+          ※START後、ボタンを押すとログが増えます。<br/>
+          ※Monitor Interval は「入力差分チェック」の頻度（ms）です。環境により 1〜4ms がおすすめ。
+        </span>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--line);margin:14px 0;" />
+
+      <div class="stat">
+        <div class="kpi">
+          <div class="k">Raw events</div>
+          <div class="v" id="kpiRaw">0</div>
+        </div>
+        <div class="kpi">
+          <div class="k">Last event</div>
+          <div class="v" id="kpiLast">-</div>
+        </div>
+        <div class="kpi">
+          <div class="k">Config</div>
+          <div class="v" id="kpiCfg">-</div>
+        </div>
+        <div class="kpi">
+          <div class="k">Sampling</div>
+          <div class="v" id="kpiSample">-</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right -->
+    <div class="card">
+      <div class="split">
+        <div>
+          <div class="row" style="justify-content:space-between;">
+            <div class="tag">解析結果（最新の押下/間隔）</div>
+            <div class="small">※ボタンごとに直近の1件を表示</div>
+          </div>
+          <table class="table" id="analysisTable">
+            <thead>
+              <tr>
+                <th>Button</th>
+                <th>Last Press</th>
+                <th>Last Interval</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="small" style="margin-top:10px;">
+            Last Press = 押下時間（ms / frames / samples）<br/>
+            Last Interval = 前回UP→今回DOWNの間隔（ms / frames / samples）
+          </p>
+        </div>
+
+        <div>
+          <div class="row" style="justify-content:space-between;">
+            <div class="tag">直近イベント（タイムライン）</div>
+            <div class="small">※最新50件</div>
+          </div>
+          <textarea id="timeline" readonly></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ================================
+  // Config
+  // ================================
+  const FPS_PRESETS = [60,120,144,180,240];
+  const POLL_PRESETS = [125,250,500,1000];
+
+  const state = {
+    running: false,
+    padIndex: null,
+    padId: "",
+    prevButtons: [],
+    rawLogs: [], // {timeMs, button, state}
+    // Per button last stats (computed)
+    lastPress: new Map(),    // button -> {ms, frames, samples}
+    lastInterval: new Map(), // button -> {ms, frames, samples}
+    // Tracking
+    pressStartMs: new Map(), // button -> timeMs
+    lastUpMs: new Map(),     // button -> timeMs
+    timer: null,
+  };
+
+  const config = {
+    pollingRateHz: 1000,
+    fps: 60,
+    monitorIntervalMs: 2,
+  };
+
+  // ================================
+  // DOM
+  // ================================
+  const $ = (id) => document.getElementById(id);
+  const elPadName = $("padName");
+  const elPadIndex = $("padIndex");
+  const elRunStatus = $("runStatus");
+
+  const selPolling = $("pollingRate");
+  const selFps = $("fps");
+  const inpMonitor = $("monitorInterval");
+
+  const btnStart = $("btnStart");
+  const btnStop = $("btnStop");
+  const btnReset = $("btnReset");
+  const btnExportRaw = $("btnExportRaw");
+  const btnExportAnalysis = $("btnExportAnalysis");
+
+  const elKpiRaw = $("kpiRaw");
+  const elKpiLast = $("kpiLast");
+  const elKpiCfg = $("kpiCfg");
+  const elKpiSample = $("kpiSample");
+
+  const elTimeline = $("timeline");
+  const elAnalysisBody = $("analysisTable").querySelector("tbody");
+
+  // ================================
+  // Helpers
+  // ================================
+  function clampInt(n, min, max, fallback){
+    n = Number(n);
+    if (!Number.isFinite(n)) return fallback;
+    n = Math.floor(n);
+    if (n < min) return min;
+    if (n > max) return max;
+    return n;
+  }
+
+  function frameMs(fps){ return 1000 / fps; }
+  function pollMs(hz){ return 1000 / hz; }
+
+  function msToFrame(tMs, fps){
+    return Math.floor(tMs / frameMs(fps));
+  }
+
+  function msToSample(tMs, hz){
+    return Math.floor(tMs / pollMs(hz));
+  }
+
+  function fmtNum(n){ return (Number.isFinite(n) ? n.toString() : "-"); }
+
+  function fmtTriple(ms, frames, samples){
+    return `${ms.toFixed(2)}ms / ${frames}F / ${samples}smp`;
+  }
+
+  function getGamepad(){
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    if (state.padIndex !== null) return pads[state.padIndex] || null;
+
+    // Auto-pick first connected
+    for (let i=0;i<pads.length;i++){
+      if (pads[i]) {
+        state.padIndex = i;
+        return pads[i];
+      }
+    }
+    return null;
+  }
+
+  function updatePadInfo(){
+    const pad = getGamepad();
+    if (!pad){
+      elPadName.textContent = "未接続";
+      elPadIndex.textContent = "-";
+      return;
+    }
+    state.padId = pad.id || "Gamepad";
+    elPadName.textContent = state.padId;
+    elPadIndex.textContent = String(state.padIndex);
+  }
+
+  function setRunning(v){
+    state.running = v;
+    elRunStatus.textContent = v ? "RUN" : "STOP";
+    elRunStatus.className = v ? "ok" : "ng";
+  }
+
+  function pushRawEvent(button, evState){
+    const t = performance.now();
+    state.rawLogs.push({ timeMs: t, button, state: evState });
+
+    // update KPIs
+    elKpiRaw.textContent = String(state.rawLogs.length);
+    elKpiLast.textContent = `t=${t.toFixed(2)}ms btn=${button} ${evState}`;
+
+    // update derived per-button stats in ms (then map to frames/samples with current config)
+    if (evState === "down"){
+      // interval: lastUp -> thisDown
+      if (state.lastUpMs.has(button)){
+        const prevUp = state.lastUpMs.get(button);
+        const intervalMs = t - prevUp;
+        state.lastInterval.set(button, mapDur(intervalMs));
+      }
+      state.pressStartMs.set(button, t);
+    } else if (evState === "up"){
+      state.lastUpMs.set(button, t);
+      if (state.pressStartMs.has(button)){
+        const downT = state.pressStartMs.get(button);
+        const durMs = t - downT;
+        state.lastPress.set(button, mapDur(durMs));
+        state.pressStartMs.delete(button);
+      }
+    }
+
+    renderTimeline();
+    renderAnalysisTable();
+  }
+
+  function mapDur(ms){
+    return {
+      ms,
+      frames: Math.max(0, msToFrame(ms, config.fps)),
+      samples: Math.max(0, msToSample(ms, config.pollingRateHz)),
+    };
+  }
+
+  function reanalyzeAll(){
+    // Re-map stored lastPress/lastInterval based on new config, using ms as source of truth
+    for (const [btn, v] of state.lastPress.entries()){
+      state.lastPress.set(btn, mapDur(v.ms));
+    }
+    for (const [btn, v] of state.lastInterval.entries()){
+      state.lastInterval.set(btn, mapDur(v.ms));
+    }
+    renderAnalysisTable();
+    renderTimeline();
+    updateKpis();
+  }
+
+  function updateKpis(){
+    elKpiCfg.textContent =
+      `FPS=${config.fps} / Poll=${config.pollingRateHz}Hz`;
+
+    const fm = frameMs(config.fps);
+    const pm = pollMs(config.pollingRateHz);
+    elKpiSample.textContent =
+      `1F=${fm.toFixed(3)}ms / 1smp=${pm.toFixed(3)}ms`;
+
+    elKpiRaw.textContent = String(state.rawLogs.length);
+  }
+
+  function renderTimeline(){
+    const max = 50;
+    const start = Math.max(0, state.rawLogs.length - max);
+    const chunk = state.rawLogs.slice(start);
+
+    const lines = chunk.map((e, idx) => {
+      const absIndex = start + idx;
+      const f = msToFrame(e.timeMs, config.fps);
+      const s = msToSample(e.timeMs, config.pollingRateHz);
+      return `${absIndex.toString().padStart(5,"0")} | t=${e.timeMs.toFixed(2)}ms | F=${String(f).padStart(5," ")} | smp=${String(s).padStart(6," ")} | btn=${String(e.button).padStart(2," ")} ${e.state}`;
+    });
+
+    elTimeline.value = lines.join("\n");
+  }
+
+  function renderAnalysisTable(){
+    // Determine buttons seen
+    const buttons = new Set();
+    for (const e of state.rawLogs) buttons.add(e.button);
+    const arr = Array.from(buttons).sort((a,b)=>a-b);
+
+    // Clear
+    elAnalysisBody.innerHTML = "";
+
+    if (arr.length === 0){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="3" class="small">まだログがありません（STARTして入力してください）</td>`;
+      elAnalysisBody.appendChild(tr);
+      return;
+    }
+
+    for (const b of arr){
+      const press = state.lastPress.get(b);
+      const interval = state.lastInterval.get(b);
+
+      const pressText = press ? fmtTriple(press.ms, press.frames, press.samples) : "-";
+      const intervalText = interval ? fmtTriple(interval.ms, interval.frames, interval.samples) : "-";
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><span class="pill">${b}</span></td>
+        <td class="mono">${pressText}</td>
+        <td class="mono">${intervalText}</td>
+      `;
+      elAnalysisBody.appendChild(tr);
+    }
+  }
+
+  // ================================
+  // Sampling loop
+  // ================================
+  function tick(){
+    if (!state.running) return;
+
+    const pad = getGamepad();
+    if (!pad){
+      updatePadInfo();
+      return;
+    }
+
+    // buttons diff
+    const curr = pad.buttons.map(b => !!b.pressed);
+    const prev = state.prevButtons;
+
+    for (let i=0; i<curr.length; i++){
+      const p = prev[i] ?? false;
+      const c = curr[i];
+
+      if (!p && c) pushRawEvent(i, "down");
+      if (p && !c) pushRawEvent(i, "up");
+    }
+
+    state.prevButtons = curr;
+  }
+
+  function start(){
+    updatePadInfo();
+    if (state.running) return;
+
+    // validate monitor interval
+    config.monitorIntervalMs = clampInt(inpMonitor.value, 1, 20, 2);
+
+    setRunning(true);
+    updateKpis();
+    state.timer = setInterval(tick, config.monitorIntervalMs);
+  }
+
+  function stop(){
+    if (!state.running) return;
+    setRunning(false);
+    if (state.timer){
+      clearInterval(state.timer);
+      state.timer = null;
+    }
+  }
+
+  function resetAll(){
+    stop();
+    state.rawLogs = [];
+    state.prevButtons = [];
+    state.lastPress.clear();
+    state.lastInterval.clear();
+    state.pressStartMs.clear();
+    state.lastUpMs.clear();
+    elKpiRaw.textContent = "0";
+    elKpiLast.textContent = "-";
+    elTimeline.value = "";
+    renderAnalysisTable();
+    updateKpis();
+  }
+
+  // ================================
+  // Export
+  // ================================
+  function downloadText(filename, text){
+    const blob = new Blob([text], { type:"text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportRawCsv(){
+    // Raw logs (ms-based)
+    const header = "index,timeMs,button,state\n";
+    const body = state.rawLogs.map((e,i)=>`${i},${e.timeMs.toFixed(4)},${e.button},${e.state}`).join("\n");
+    downloadText(`raw_logs_${Date.now()}.csv`, header + body + "\n");
+  }
+
+  function exportAnalysisCsv(){
+    // per-button last press/interval
+    const buttons = new Set();
+    for (const e of state.rawLogs) buttons.add(e.button);
+    const arr = Array.from(buttons).sort((a,b)=>a-b);
+
+    const header = "button,lastPressMs,lastPressFrames,lastPressSamples,lastIntervalMs,lastIntervalFrames,lastIntervalSamples,fps,pollingHz\n";
+    const lines = arr.map(b=>{
+      const p = state.lastPress.get(b);
+      const itv = state.lastInterval.get(b);
+      return [
+        b,
+        p ? p.ms.toFixed(4) : "",
+        p ? p.frames : "",
+        p ? p.samples : "",
+        itv ? itv.ms.toFixed(4) : "",
+        itv ? itv.frames : "",
+        itv ? itv.samples : "",
+        config.fps,
+        config.pollingRateHz
+      ].join(",");
+    }).join("\n");
+
+    downloadText(`analysis_${Date.now()}.csv`, header + lines + "\n");
+  }
+
+  // ================================
+  // Events
+  // ================================
+  selPolling.addEventListener("change", () => {
+    const v = Number(selPolling.value);
+    config.pollingRateHz = POLL_PRESETS.includes(v) ? v : 1000;
+    reanalyzeAll();
+  });
+
+  selFps.addEventListener("change", () => {
+    const v = Number(selFps.value);
+    config.fps = FPS_PRESETS.includes(v) ? v : 60;
+    reanalyzeAll();
+  });
+
+  inpMonitor.addEventListener("change", () => {
+    config.monitorIntervalMs = clampInt(inpMonitor.value, 1, 20, 2);
+    if (state.running){
+      // restart timer with new interval
+      stop();
+      start();
+    }
+    updateKpis();
+  });
+
+  btnStart.addEventListener("click", start);
+  btnStop.addEventListener("click", stop);
+  btnReset.addEventListener("click", resetAll);
+  btnExportRaw.addEventListener("click", exportRawCsv);
+  btnExportAnalysis.addEventListener("click", exportAnalysisCsv);
+
+  window.addEventListener("gamepadconnected", (e) => {
+    state.padIndex = e.gamepad.index;
+    updatePadInfo();
+  });
+  window.addEventListener("gamepaddisconnected", () => {
+    // keep logs, but stop
+    updatePadInfo();
+  });
+
+  // Initial
+  updatePadInfo();
+  updateKpis();
+  renderAnalysisTable();
+
+})();
+</script>
+</body>
+</html>
